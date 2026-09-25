@@ -1,0 +1,41 @@
+============================================================
+Spades Self-Play Data Generation
+  Games:            500
+  ISMCTS iters:     1000/move
+  Game workers:     14
+  ISMCTS workers:   1/game
+  Total cores used: 14/16
+  Output:           selfplay_data/
+============================================================
+Process ForkPoolWorker-14:
+Process ForkPoolWorker-11:
+Process ForkPoolWorker-12:
+Process ForkPoolWorker-10:
+Process ForkPoolWorker-13:
+Process ForkPoolWorker-7:
+Process ForkPoolWorker-8:
+Process ForkPoolWorker-6:
+Process ForkPoolWorker-9:
+Process ForkPoolWorker-4:
+Process ForkPoolWorker-5:
+Process ForkPoolWorker-2:
+Process ForkPoolWorker-1:
+Process ForkPoolWorker-3:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/multiprocessing/pool.py", line 856, in next
+    item = self._items.popleft()
+           ^^^^^^^^^^^^^^^^^^^^^
+IndexError: pop from an empty deque
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/root/spades/selfplay.py", line 292, in <module>
+    run_selfplay(
+  File "/root/spades/selfplay.py", line 81, in run_selfplay
+    for i, result in enumerate(pool.imap_unordered(_worker, args_list)):
+  File "/usr/lib/python3.12/multiprocessing/pool.py", line 861, in next
+    self._cond.wait(timeout)
+  File "/usr/lib/python3.12/threading.py", line 355, in wait
+    waiter.acquire()
+KeyboardInterrupt
