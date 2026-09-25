@@ -114,6 +114,18 @@ def evaluate(
     if baseline not in ('rule', 'search'):
         raise ValueError(f"Unknown baseline: {baseline}")
 
+    # PlayModelInference is ONNX-only; convert .pt up front so the advertised
+    # ".pt or .onnx" interface actually holds. Done once here, not per worker.
+    model_pt = None
+    onnx_path = new_model_path
+    if new_model_path.endswith('.pt'):
+        from nn import load_play_model, export_onnx
+        from features import FEATURE_DIM
+        model_pt = load_play_model(new_model_path)
+        onnx_path = os.path.splitext(new_model_path)[0] + '.onnx'
+        export_onnx(model_pt, onnx_path, FEATURE_DIM)
+        print(f"Converted {new_model_path} → {onnx_path}")
+
     num_workers = num_workers or max(1, (os.cpu_count() or 4) - 1)
     num_workers = min(num_workers, num_games)  # no idle workers on small runs
     print_every = max(1, num_games // 20)  # ~20 updates total, works for small runs too
@@ -126,7 +138,7 @@ def evaluate(
 
     t0 = time.time()
     with mp.Pool(num_workers, initializer=_init_worker,
-                 initargs=(new_model_path, baseline, search_iters)) as pool:
+                 initargs=(onnx_path, baseline, search_iters)) as pool:
         for i, result in enumerate(pool.imap_unordered(_play_eval_game, args_list)):
             if result['new_won']:
                 wins[0] += 1
@@ -165,17 +177,14 @@ def evaluate(
     if result['promoted']:
         import shutil
         best_path = os.path.join(os.path.dirname(new_model_path), 'play_model.onnx')
-        # Convert .pt to .onnx if needed
-        if new_model_path.endswith('.pt'):
-            import torch
-            from nn import PlayModel, export_onnx
-            from features import FEATURE_DIM
-            model_pt = PlayModel()
-            model_pt.load_state_dict(torch.load(new_model_path, map_location='cpu'))
+        if model_pt is not None:
+            # Re-export (not copy) so the external-weights sidecar gets the right name
             export_onnx(model_pt, best_path, FEATURE_DIM)
             print(f"  Exported promoted model → {best_path}")
-        else:
+        elif os.path.abspath(new_model_path) != os.path.abspath(best_path):
             shutil.copy(new_model_path, best_path)
+            if os.path.exists(new_model_path + '.data'):
+                shutil.copy(new_model_path + '.data', best_path + '.data')
             print(f"  Copied promoted model → {best_path}")
 
     return result
