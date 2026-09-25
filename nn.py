@@ -92,7 +92,11 @@ def export_onnx(model: nn.Module, path: str, input_dim: int):
         input_names=['features'],
         output_names=['policy', 'value'] if isinstance(model, PlayModel) else ['bid_logits'],
         dynamic_axes={'features': {0: 'batch'}},
-        opset_version=13
+        opset_version=18  # torch's dynamo exporter targets 18+ natively; requesting
+                          # 13 forces a downgrade conversion that's buggy for Relu
+                          # in current torch/onnx versions (silently falls back to 18
+                          # anyway on failure) — asking for 18 up front avoids that.
+
     )
 
 
