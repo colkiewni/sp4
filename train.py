@@ -43,8 +43,11 @@ class BidDataset(Dataset):
 
 
 def load_selfplay_data(data_dir: str, max_files: int = None):
-    """Load all .npz files from selfplay output directory."""
-    files = sorted(glob.glob(os.path.join(data_dir, 'game_*.npz')))
+    """Load all .npz files from selfplay output directory (recursively —
+    lets you keep separate cycles in subfolders, e.g. data_dir/cycle3/game_*.npz,
+    without filename collisions or needing to rename files, which previously
+    caused merged batches to be silently dropped — see git history)."""
+    files = sorted(glob.glob(os.path.join(data_dir, '**', 'game_*.npz'), recursive=True))
     if max_files:
         files = files[:max_files]
 
