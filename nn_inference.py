@@ -17,6 +17,27 @@ from engine import Card, DealState, GameState, legal_plays
 from features import encode_state, encode_hand_for_bidding, CARD_INDEX
 
 
+def make_nn_policy_fn(model: 'PlayModelInference', game: GameState):
+    """Create an ISMCTS policy_fn closure from a loaded play model."""
+    def policy_fn(deal, player):
+        try:
+            policy, _ = model.policy_and_value(deal, game, player)
+            return policy
+        except Exception:
+            return {}
+    return policy_fn
+
+
+def make_nn_value_fn(model: 'PlayModelInference', game: GameState, team: int):
+    """Create an ISMCTS value_fn closure from a loaded play model.
+    ponytail: diagnosed (see evaluate.py) as currently hurting search more
+    than it helps until the value head has more training data — callers
+    should leave value_fn=None until re-validated with diagnose_value.py."""
+    def value_fn(deal, t):
+        return model.value_only(deal, game, t)
+    return value_fn
+
+
 class PlayModelInference:
     """Wraps play_model.onnx for fast CPU inference."""
 

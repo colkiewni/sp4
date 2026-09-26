@@ -16,27 +16,9 @@ import multiprocessing as mp
 from engine import new_game, start_deal, finish_deal, place_bid, play_card, legal_plays
 from bidding import make_bid
 from search import ismcts_choose_with_policy
-from nn_inference import PlayModelInference, load_models, get_play_model
+from nn_inference import PlayModelInference, load_models, get_play_model, make_nn_policy_fn, make_nn_value_fn
 from play import RuleBot, SearchBot, play_game
 import numpy as np
-
-
-def make_nn_policy_fn(model: PlayModelInference, game):
-    """Create a policy function closure for ISMCTS."""
-    def policy_fn(deal, player):
-        try:
-            policy, _ = model.policy_and_value(deal, game, player)
-            return policy
-        except Exception:
-            return {}
-    return policy_fn
-
-
-def make_nn_value_fn(model: PlayModelInference, game, team: int):
-    """Create a value function closure for ISMCTS."""
-    def value_fn(deal, t):
-        return model.value_only(deal, game, t)
-    return value_fn
 
 
 class NNSearchBot:

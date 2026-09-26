@@ -14,9 +14,22 @@ from engine import (
 from bidding import make_bid
 from search import ismcts_choose_with_policy, ismcts_choose
 from features import encode_state, encode_hand_for_bidding, FEATURE_DIM, BID_FEATURE_DIM, CARD_INDEX
+from nn_inference import PlayModelInference, make_nn_policy_fn
 import os
 import time
 import multiprocessing as mp
+
+
+# Per-worker state: each pool process loads the model ONCE (if given) and
+# reuses it across every game it's handed, instead of reloading per game.
+_worker_model = None
+
+
+def _init_worker(model_path: str):
+    """Pool initializer: runs once per worker process."""
+    global _worker_model
+    if model_path:
+        _worker_model = PlayModelInference(model_path)
 
 
 
@@ -26,7 +39,8 @@ def run_selfplay(
     search_iterations: int = 1000,
     num_workers: int = None,
     output_dir: str = 'selfplay_data',
-    ismcts_workers_per_game: int = 1
+    ismcts_workers_per_game: int = 1,
+    model_path: str = None
 ):
     """
     Run parallel self-play games.
@@ -40,7 +54,16 @@ def run_selfplay(
       - num_workers=8, ismcts_workers_per_game=2  (16 cores, balanced)
       - num_workers=14, ismcts_workers_per_game=1 (14 cores, max throughput)
       - num_workers=4, ismcts_workers_per_game=4  (16 cores, stronger search)
+
+    model_path: optional trained play model (.onnx). When given, ISMCTS uses
+    it as a policy prior (PUCT-weighted move selection) — NOT a value cutoff;
+    diagnose_value.py showed the value head currently hurts more than it
+    helps, so it's deliberately never used here. When omitted (default),
+    self-play runs exactly as before: plain policy-free ISMCTS.
     """
+    if model_path and not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model not found: {model_path}")
+
     cpu_count = os.cpu_count() or 4
 
     if num_workers is None:
@@ -68,6 +91,7 @@ def run_selfplay(
     print(f"  Game workers:     {num_workers}")
     print(f"  ISMCTS workers:   {ismcts_workers_per_game}/game")
     print(f"  Total cores used: {num_workers * ismcts_workers_per_game}/{cpu_count}")
+    print(f"  Policy guidance:  {model_path if model_path else 'none (plain ISMCTS)'}")
     print(f"  Output:           {output_dir}/")
     print(f"{'='*60}")
 
@@ -76,7 +100,7 @@ def run_selfplay(
     total_play_samples = 0
     wins = [0, 0]
 
-    with mp.Pool(num_workers) as pool:
+    with mp.Pool(num_workers, initializer=_init_worker, initargs=(model_path,)) as pool:
         for i, result in enumerate(pool.imap_unordered(_worker, args_list)):
             results.append(result)
             if result.get('winner') is not None:
@@ -128,7 +152,8 @@ def _worker(args):
         search_iterations=search_iterations,
         seed=seed,
         collect_data=True,
-        ismcts_workers=ismcts_workers
+        ismcts_workers=ismcts_workers,
+        model=_worker_model
     )
 
     play_features, play_policies, play_values = [], [], []
@@ -175,7 +200,8 @@ def play_full_game_selfplay(
     search_iterations: int = 1000,
     seed: int = None,
     collect_data: bool = True,
-    ismcts_workers: int = 1
+    ismcts_workers: int = 1,
+    model: 'PlayModelInference' = None
 ) -> tuple[list[dict], GameState]:
     """Play a full game, return all training samples and final game state."""
     rng = random.Random(seed)
@@ -188,7 +214,8 @@ def play_full_game_selfplay(
             search_iterations=search_iterations,
             rng=rng,
             collect_data=collect_data,
-            ismcts_workers=ismcts_workers
+            ismcts_workers=ismcts_workers,
+            model=model
         )
         all_samples.extend(samples)
 
@@ -200,7 +227,8 @@ def play_one_deal_selfplay(
     search_iterations: int = 1000,
     rng: random.Random = None,
     collect_data: bool = True,
-    ismcts_workers: int = 1
+    ismcts_workers: int = 1,
+    model: 'PlayModelInference' = None
 ) -> tuple[list[dict], GameState]:
     """Play one deal with ISMCTS, collecting training data."""
     rng = rng or random.Random()
@@ -237,8 +265,11 @@ def play_one_deal_selfplay(
             card = moves[0]
             visit_dist = {card: 1.0}
         else:
+            policy_fn = make_nn_policy_fn(model, game) if model else None
             card, visit_dist = ismcts_choose_with_policy(
                 deal, game, p,
+                policy_fn=policy_fn,
+                value_fn=None,  # see nn_inference.make_nn_value_fn — deliberately unused for now
                 iterations=search_iterations,
                 rng=rng,
                 num_workers=ismcts_workers
@@ -286,6 +317,9 @@ if __name__ == '__main__':
     parser.add_argument('--ismcts-workers', type=int, default=1,
                         help='ISMCTS workers per game (default: 1)')
     parser.add_argument('--output', type=str, default='selfplay_data')
+    parser.add_argument('--model', type=str, default=None,
+                        help='Optional trained play model (.onnx) to guide ISMCTS '
+                             'as a policy prior. Omit for plain ISMCTS (default).')
     args = parser.parse_args()
 
     run_selfplay(
@@ -294,5 +328,6 @@ if __name__ == '__main__':
         search_iterations=args.iterations,
         num_workers=args.workers,
         output_dir=args.output,
-        ismcts_workers_per_game=args.ismcts_workers
+        ismcts_workers_per_game=args.ismcts_workers,
+        model_path=args.model
     )
