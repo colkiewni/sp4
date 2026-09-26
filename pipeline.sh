@@ -53,10 +53,11 @@ for cycle in $(seq 1 $CYCLES); do
     TIMEOUT=7200  # 2 hours
     ELAPSED=0
     POLL=30
-    TRAINED_MODEL="${MODEL_DIR}/play_model_best.pt"
+    TRAINED_MODEL="${MODEL_DIR}/play_model_best.pt"       # signals training finished
+    EVAL_MODEL="${MODEL_DIR}/play_model_candidate.onnx"   # what evaluate.py actually loads
 
-    # Remove stale model so we wait for the new one
-    rm -f "$TRAINED_MODEL"
+    # Remove stale files so we wait for the new ones
+    rm -f "$TRAINED_MODEL" "$EVAL_MODEL"
 
     echo "  Polling for $TRAINED_MODEL (timeout: ${TIMEOUT}s)..."
     while [ ! -f "$TRAINED_MODEL" ]; do
@@ -79,7 +80,7 @@ for cycle in $(seq 1 $CYCLES); do
     # Step 4: Evaluate
     echo "[4/4] Evaluating new model vs rule baseline..."
     python evaluate.py \
-        --new "$TRAINED_MODEL" \
+        --new "$EVAL_MODEL" \
         --baseline rule \
         --games 200 \
         --target "$TARGET" \

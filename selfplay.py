@@ -14,7 +14,6 @@ from engine import (
 from bidding import make_bid
 from search import ismcts_choose_with_policy, ismcts_choose
 from features import encode_state, encode_hand_for_bidding, FEATURE_DIM, BID_FEATURE_DIM, CARD_INDEX
-from copy import deepcopy
 import os
 import time
 import multiprocessing as mp

@@ -12,7 +12,7 @@ Parallelism strategy:
 from __future__ import annotations
 import math
 import random
-from copy import deepcopy
+
 from typing import Optional
 
 from engine import (
@@ -20,7 +20,6 @@ from engine import (
     legal_plays, play_card, score_deal
 )
 from belief import BeliefState, make_belief
-
 
 # ---------------------------------------------------------------------------
 # Node
@@ -52,7 +51,6 @@ class ISMCTSNode:
     def best_child_visits(self) -> 'ISMCTSNode':
         return max(self.children, key=lambda c: c.visits)
 
-
 # ---------------------------------------------------------------------------
 # Simulation helpers
 # ---------------------------------------------------------------------------
@@ -66,7 +64,6 @@ def _rollout_deal(deal: DealState, rng: random.Random) -> DealState:
             break
         play_card(deal, p, rng.choice(moves))
     return deal
-
 
 def _evaluate_terminal(deal: DealState, game: GameState, team: int) -> float:
     """
@@ -86,7 +83,6 @@ def _evaluate_terminal(deal: DealState, game: GameState, team: int) -> float:
     diff = deltas[team] - deltas[1 - team]
     return max(-1.0, min(1.0, diff / 100.0))
 
-
 def _determinize(
     deal: DealState,
     observer: int,
@@ -94,13 +90,12 @@ def _determinize(
     rng: random.Random
 ) -> DealState:
     """Sample a world consistent with belief state."""
-    det = deepcopy(deal)
+    det = deal.clone()
     sampled = belief.sample_consistent_deal(deal, rng)
     for p in range(4):
         if p != observer:
             det.hands[p] = sampled[p]
     return det
-
 
 # ---------------------------------------------------------------------------
 # Core ISMCTS — single process, proper UCB tree
@@ -160,7 +155,7 @@ def ismcts_choose(
             chosen = max(compatible, key=lambda c: c.ucb1())
 
         # 5. Simulate: play chosen card then random rollout
-        sim = deepcopy(det)
+        sim = det.clone()
         play_card(sim, player, chosen.card)
         _rollout_deal(sim, rng)
 
@@ -179,7 +174,6 @@ def ismcts_choose(
         return rng.choice(moves)
 
     return max(candidates, key=lambda c: c.visits).card
-
 
 # ---------------------------------------------------------------------------
 # ISMCTS with NN guidance — for selfplay training data collection
@@ -257,7 +251,7 @@ def ismcts_choose_with_policy(
             else:
                 chosen = max(compatible, key=lambda c: c.ucb1())
 
-        sim = deepcopy(det)
+        sim = det.clone()
         play_card(sim, player, chosen.card)
 
         if value_fn and sim.phase == 'playing':

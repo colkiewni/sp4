@@ -1,10 +1,7 @@
 """
 Evaluate new model vs current best.
 Run on VPS after each training cycle.
-Usage: python evaluate.py --new models/play_model_candidate.onnx --games 200
-On PROMOTE, the candidate is copied to models/play_model.onnx (the canonical
-"current best" file). On REJECT, models/play_model.onnx is left untouched —
-train.py never writes it directly, only evaluate.py does, on promotion.
+Usage: python evaluate.py --new models/play_model.onnx --games 200
 """
 
 from __future__ import annotations
@@ -189,10 +186,6 @@ def evaluate(
             model_pt.load_state_dict(torch.load(new_model_path, map_location='cpu'))
             export_onnx(model_pt, best_path, FEATURE_DIM)
             print(f"  Exported promoted model → {best_path}")
-        elif os.path.abspath(new_model_path) == os.path.abspath(best_path):
-            # --new already points at the canonical file (e.g. re-evaluating an
-            # already-promoted model) — nothing to promote it TO, it's already there.
-            print(f"  Already the canonical model at {best_path}, nothing to copy")
         else:
             shutil.copy(new_model_path, best_path)
             print(f"  Copied promoted model → {best_path}")
@@ -203,7 +196,7 @@ def evaluate(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Evaluate new model vs baseline')
     parser.add_argument('--new', type=str, required=True,
-                        help='Path to candidate .onnx file (e.g. models/play_model_candidate.onnx)')
+                        help='Path to new model .onnx file (e.g. models/play_model.onnx)')
     parser.add_argument('--baseline', type=str, default='rule',
                         choices=['rule', 'search'],
                         help='Baseline to compare against')

@@ -185,15 +185,14 @@ def train_play_model(
             torch.save(model.state_dict(), os.path.join(save_dir, 'play_model_best.pt'))
             print(f"  ↳ Saved best model (val={val_avg:.4f})")
 
-    # Export ONNX from the best checkpoint, not the final-epoch weights —
-    # val loss can tick back up after the best epoch, and everything
-    # downstream (evaluate.py, selfplay, play) uses the .onnx.
-    best_pt = os.path.join(save_dir, 'play_model_best.pt')
-    if os.path.exists(best_pt):
-        model.load_state_dict(torch.load(best_pt, map_location='cpu'))
+    # Export ONNX — reload the BEST checkpoint first. Without this, the export
+    # reflects whatever the final epoch happened to produce, which can be worse
+    # than the best epoch if val loss ticked back up later in training.
+    best_path = os.path.join(save_dir, 'play_model_best.pt')
+    model.load_state_dict(torch.load(best_path, map_location='cpu'))
     model.cpu().eval()
-    export_onnx(model, os.path.join(save_dir, 'play_model.onnx'), FEATURE_DIM)
-    print(f"Exported ONNX to {save_dir}/play_model.onnx")
+    export_onnx(model, os.path.join(save_dir, 'play_model_candidate.onnx'), FEATURE_DIM)
+    print(f"Exported ONNX to {save_dir}/play_model_candidate.onnx (best epoch, val={best_val_loss:.4f})")
 
     return model
 
@@ -292,13 +291,12 @@ def train_bid_model(
             torch.save(model.state_dict(), os.path.join(save_dir, 'bid_model_best.pt'))
             print(f"  ↳ Saved best model (val={val_avg:.4f}, acc={val_acc:.3f})")
 
-    # Same as play model: export the best checkpoint, not final-epoch weights
-    best_pt = os.path.join(save_dir, 'bid_model_best.pt')
-    if os.path.exists(best_pt):
-        model.load_state_dict(torch.load(best_pt, map_location='cpu'))
+    # Reload BEST checkpoint before export — see same note in train_play_model.
+    best_path = os.path.join(save_dir, 'bid_model_best.pt')
+    model.load_state_dict(torch.load(best_path, map_location='cpu'))
     model.cpu().eval()
-    export_onnx(model, os.path.join(save_dir, 'bid_model.onnx'), BID_FEATURE_DIM)
-    print(f"Exported ONNX to {save_dir}/bid_model.onnx")
+    export_onnx(model, os.path.join(save_dir, 'bid_model_candidate.onnx'), BID_FEATURE_DIM)
+    print(f"Exported ONNX to {save_dir}/bid_model_candidate.onnx (best epoch, val={best_val_loss:.4f})")
 
     return model
 

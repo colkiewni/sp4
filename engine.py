@@ -76,6 +76,12 @@ class TrickState:
                 best_player, best_card = player, card
         return best_player
 
+    def clone(self) -> 'TrickState':
+        """Cards are immutable (frozen Card), so only the list container
+        needs a fresh copy — no need for copy.deepcopy's generic recursion."""
+        return TrickState(lead_player=self.lead_player, cards=list(self.cards),
+                           lead_suit=self.lead_suit)
+
 
 @dataclass
 class DealState:
@@ -115,6 +121,29 @@ class DealState:
 
     def team_tricks(self, team: int) -> int:
         return sum(self.tricks_won[p] for p in range(4) if self.team_of(p) == team)
+
+    def clone(self) -> 'DealState':
+        """
+        Fast substitute for copy.deepcopy, built for ISMCTS's hot loop (called
+        ~2000x per card decision). Card/Suit/Rank are immutable frozen
+        dataclasses, so they're safe to share across copies — only the mutable
+        containers (hands, trick lists, etc.) need fresh copies. deepcopy's
+        generic reflection-based recursion was profiled at ~80% of total
+        self-play time; this does the same job field-by-field, no reflection.
+        """
+        return DealState(
+            hands=[set(h) for h in self.hands],
+            bids=list(self.bids),
+            tricks_won=list(self.tricks_won),
+            dealer=self.dealer,
+            current_trick=self.current_trick.clone() if self.current_trick else None,
+            trick_number=self.trick_number,
+            spades_broken=self.spades_broken,
+            cards_played=set(self.cards_played),
+            trick_history=[t.clone() for t in self.trick_history],
+            current_player=self.current_player,
+            phase=self.phase,
+        )
 
 
 @dataclass
