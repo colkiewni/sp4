@@ -57,12 +57,22 @@ _worker_new_bot = None
 _worker_baseline_bot = None
 
 
-def _init_worker(new_model_path: str, baseline: str, search_iters: int):
+def _init_worker(new_model_path: str, baseline: str, search_iters: int,
+                  baseline_model_path: str = None):
     """Pool initializer: runs once per worker process."""
     global _worker_new_bot, _worker_baseline_bot
     model = PlayModelInference(new_model_path)
     _worker_new_bot = NNSearchBot(model, iterations=search_iters)
-    _worker_baseline_bot = RuleBot() if baseline == 'rule' else SearchBot(iterations=search_iters)
+    if baseline_model_path:
+        # Model-vs-model: pit the new candidate against a SPECIFIC other
+        # checkpoint (e.g. last cycle's promoted model), instead of a fixed
+        # rule/search baseline. Answers "did this get better or worse than
+        # last time" directly, rather than inferring it from two separate
+        # noisy comparisons against an unrelated baseline.
+        baseline_model = PlayModelInference(baseline_model_path)
+        _worker_baseline_bot = NNSearchBot(baseline_model, iterations=search_iters)
+    else:
+        _worker_baseline_bot = RuleBot() if baseline == 'rule' else SearchBot(iterations=search_iters)
 
 
 def _play_eval_game(args: tuple) -> dict:
@@ -91,13 +101,19 @@ def evaluate(
     target_score: int = 500,
     search_iters: int = 1000,
     seed_offset: int = 0,
-    num_workers: int = None
+    num_workers: int = None,
+    baseline_model_path: str = None
 ) -> dict:
     """
     Pit new NN model (team 0) against baseline (team 1).
     Games are distributed across worker processes (multiprocessing.Pool),
     same pattern as selfplay.py, each worker loading the model once.
     Returns win rates and score stats.
+
+    baseline_model_path: when given, ignores `baseline` and instead pits the
+    new model against another specific .onnx checkpoint (both using NNSearchBot).
+    Use this to directly compare successive self-play cycles against each
+    other, rather than each separately against rule/search.
     """
     if not os.path.exists(new_model_path):
         raise FileNotFoundError(f"Model not found: {new_model_path}")
@@ -108,7 +124,12 @@ def evaluate(
             f"export instead, e.g. models/play_model.onnx (train.py writes this "
             f"automatically alongside the .pt file)."
         )
-    if baseline not in ('rule', 'search'):
+    if baseline_model_path:
+        if not os.path.exists(baseline_model_path):
+            raise FileNotFoundError(f"Baseline model not found: {baseline_model_path}")
+        if baseline_model_path.endswith('.pt'):
+            raise ValueError(f"--baseline-model needs an .onnx file, not {baseline_model_path}")
+    elif baseline not in ('rule', 'search'):
         raise ValueError(f"Unknown baseline: {baseline}")
 
     num_workers = num_workers or max(1, (os.cpu_count() or 4) - 1)
@@ -123,7 +144,7 @@ def evaluate(
 
     t0 = time.time()
     with mp.Pool(num_workers, initializer=_init_worker,
-                 initargs=(new_model_path, baseline, search_iters)) as pool:
+                 initargs=(new_model_path, baseline, search_iters, baseline_model_path)) as pool:
         for i, result in enumerate(pool.imap_unordered(_play_eval_game, args_list)):
             if result['new_won']:
                 wins[0] += 1
@@ -153,7 +174,8 @@ def evaluate(
     }
 
     print(f"\n{'='*50}")
-    print(f"Evaluation: {num_games} games vs {baseline}")
+    baseline_label = f"model {baseline_model_path}" if baseline_model_path else baseline
+    print(f"Evaluation: {num_games} games vs {baseline_label}")
     print(f"  New model wins: {wins[0]} ({win_rate:.1%})")
     print(f"  Baseline wins:  {wins[1]}")
     print(f"  Avg score diff: {result['avg_score_diff']:.1f} ± {result['std_score_diff']:.1f}")
@@ -188,7 +210,11 @@ if __name__ == '__main__':
                         help='Path to candidate .onnx file (e.g. models/play_model_candidate.onnx)')
     parser.add_argument('--baseline', type=str, default='rule',
                         choices=['rule', 'search'],
-                        help='Baseline to compare against')
+                        help='Baseline to compare against (ignored if --baseline-model is given)')
+    parser.add_argument('--baseline-model', type=str, default=None,
+                        help='Compare against another specific .onnx checkpoint instead of '
+                             'rule/search — e.g. an older promoted model, to directly measure '
+                             'whether a new cycle actually improved on the last one.')
     parser.add_argument('--games', type=int, default=200)
     parser.add_argument('--target', type=int, default=500)
     parser.add_argument('--iters', type=int, default=1000)
@@ -204,5 +230,6 @@ if __name__ == '__main__':
         target_score=args.target,
         search_iters=args.iters,
         seed_offset=args.seed,
-        num_workers=args.workers
+        num_workers=args.workers,
+        baseline_model_path=args.baseline_model
     )
